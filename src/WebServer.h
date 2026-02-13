@@ -101,7 +101,7 @@ typedef enum
 
 typedef uint32_t t_ElapsedTime;   // Time to be used for elapsed time
 
-struct WebServer
+struct WebServerContext
 {
     e_WebServerStateType State;
     struct SocketCon Con;
@@ -122,36 +122,41 @@ struct WebServer
     char ArgsStorage[WS_OPT_ARG_MEMORY_SIZE];
 };
 
+struct WebServer
+{
+    struct SocketCon ListeningSocket;
+    struct WebServerContext Connections[WS_OPT_MAX_CONNECTIONS];
+};
+
 /***  CLASS DEFINITIONS                ***/
 
 /***  GLOBAL VARIABLE DEFINITIONS      ***/
 
 /***  EXTERNAL FUNCTION PROTOTYPES     ***/
-void WS_Init(void);
-void WS_Shutdown(void);
-bool WS_Start(uint16_t Port);
-void WS_Tick(void);
-void WS_WriteWhole(struct WebServer *Web,const char *Type,const char *Buffer,int Len);
-void WS_WriteWholeStr(struct WebServer *Web,const char *Type,const char *Buffer);
-void WS_WriteChunk(struct WebServer *Web,const char *Buffer,int Len);
-void WS_WriteChunkStr(struct WebServer *Web,const char *Buffer);
-bool WS_Header(struct WebServer *Web,const char *Header);
-bool WS_Location(struct WebServer *Web,const char *NewURL);
-bool WS_SetHTTPStatusCode(struct WebServer *Web,e_ReplyStatusType Code);
-const char *WS_GET(struct WebServer *Web,const char *Arg);
-const char *WS_COOKIE(struct WebServer *Web,const char *Arg);
-const char *WS_POST(struct WebServer *Web,const char *Arg);
-bool WS_SetCookie(struct WebServer *Web,const char *Name,const char *Value,
+struct WebServer *WS_Init(uint16_t Port);
+void WS_Shutdown(struct WebServer *Server);
+void WS_Tick(struct WebServer *Server);
+void WS_WriteWhole(struct WebServerContext *Web,const char *Type,const char *Buffer,int Len);
+void WS_WriteWholeStr(struct WebServerContext *Web,const char *Type,const char *Buffer);
+void WS_WriteChunk(struct WebServerContext *Web,const char *Buffer,int Len);
+void WS_WriteChunkStr(struct WebServerContext *Web,const char *Buffer);
+bool WS_Header(struct WebServerContext *Web,const char *Header);
+bool WS_Location(struct WebServerContext *Web,const char *NewURL);
+bool WS_SetHTTPStatusCode(struct WebServerContext *Web,e_ReplyStatusType Code);
+const char *WS_GET(struct WebServerContext *Web,const char *Arg);
+const char *WS_COOKIE(struct WebServerContext *Web,const char *Arg);
+const char *WS_POST(struct WebServerContext *Web,const char *Arg);
+bool WS_SetCookie(struct WebServerContext *Web,const char *Name,const char *Value,
         time_t Expire,const char *Path,const char *Domain,bool Secure,
         bool HttpOnly);
 bool WS_URLEncode(const char *Value,char *OutputBuffer,int MaxLen);
 bool WS_URLDecode(const char *Value,char *Decoded,int MaxLen);
 char *WS_URLDecodeInPlace(char *Value);
-int WS_GetOSSocketHandles(t_ConSocketHandle *Handles);
+int WS_GetOSSocketHandles(struct WebServer *Server,t_ConSocketHandle *Handles);
 
 /* Web server calls these */
 bool FS_GetFileProperties(const char *Filename,struct WSPageProp *PageProp);
-void FS_SendFile(struct WebServer *Web,const void *FileData);
+void FS_SendFile(struct WebServerContext *Web,const void *FileData);
 t_ElapsedTime ReadElapsedClock(void);
 
 #endif

@@ -10,6 +10,7 @@
  *
  * COPYRIGHT:
  *    Copyright (c) 2019 Paul Hutchinson
+ *    Copyright (c) 2026 Filipe Coelho
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a copy
  *    of this software and associated documentation files (the "Software"), to deal
@@ -46,41 +47,38 @@
 /*** TYPE DEFINITIONS         ***/
 
 /*** FUNCTION PROTOTYPES      ***/
-static int WS_GetNextLine(struct WebServer *Web,char *ReadBuff,int Bytes);
-static void WS_RunServer(struct WebServer *Web,char *ReadBuff,int Bytes);
-static bool WS_ProcessURI(struct WebServer *Web);
-static void WS_ProcessGetVars(struct WebServer *Web);
-static void WS_ProcessCookieVars(struct WebServer *Web);
-static void WS_ProcessHeader(struct WebServer *Web);
-static void WS_SendResponse(struct WebServer *Web);
-static void WS_ProcessETag(struct WebServer *Web,bool Weak,const char *ETag);
-static void WS_ResetWebServer(struct WebServer *Web);
-static void WS_EndReply(struct WebServer *Web);
+static int WS_GetNextLine(struct WebServerContext *Web,char *ReadBuff,int Bytes);
+static void WS_RunServer(struct WebServerContext *Web,char *ReadBuff,int Bytes);
+static bool WS_ProcessURI(struct WebServerContext *Web);
+static void WS_ProcessGetVars(struct WebServerContext *Web);
+static void WS_ProcessCookieVars(struct WebServerContext *Web);
+static void WS_ProcessHeader(struct WebServerContext *Web);
+static void WS_SendResponse(struct WebServerContext *Web);
+static void WS_ProcessETag(struct WebServerContext *Web,bool Weak,const char *ETag);
+static void WS_ResetWebServer(struct WebServerContext *Web);
+static void WS_EndReply(struct WebServerContext *Web);
 static char *WS_SkipStorageArgs(char *StartingPos,const char **ArgsList);
 static const char *WS_FindArgInStorage(char *Pos,const char *Arg,
         const char **ArgsList);
-static void WS_StartReply(struct WebServer *Web);
-static void WS_StartProcessingPOSTVar(struct WebServer *Web);
-static bool WS_CopyLineBuffer2POSTVar(struct WebServer *Web);
+static void WS_StartReply(struct WebServerContext *Web);
+static void WS_StartProcessingPOSTVar(struct WebServerContext *Web);
+static bool WS_CopyLineBuffer2POSTVar(struct WebServerContext *Web);
 static void WS_InsertCopy(char *Dest,char *DestEnd,const char *Src,int CopyLen);
-//static void DEBUG_PrintStoredArgs(struct WebServer *Web);
-
-/*** VARIABLE DEFINITIONS     ***/
-struct SocketCon m_ListeningSocket;
-struct WebServer m_WebServers[WS_OPT_MAX_CONNECTIONS];
+//static void DEBUG_PrintStoredArgs(struct WebServerContext *Web);
 
 /*******************************************************************************
  * NAME:
  *    WS_Init
  *
  * SYNOPSIS:
- *    void WS_Init(void);
+ *    void WS_Init(uint16_t Port);
  *
  * PARAMETERS:
- *    NONE
+ *    Port [I] -- What port to listen on
  *
  * FUNCTION:
- *    This function init's the web server.
+ *    This function inits and starts the web server listening for incoming
+ *    connections.
  *
  * RETURNS:
  *    NONE
@@ -88,13 +86,23 @@ struct WebServer m_WebServers[WS_OPT_MAX_CONNECTIONS];
  * SEE ALSO:
  *    WS_Shutdown()
  ******************************************************************************/
-void WS_Init(void)
+struct WebServer *WS_Init(uint16_t Port)
 {
     int r;
+    struct WebServer *Server = calloc(1, sizeof(struct WebServer));
 
-    SocketsCon_InitSockCon(&m_ListeningSocket);
+    SocketsCon_InitSockCon(&Server->ListeningSocket);
     for(r=0;r<WS_OPT_MAX_CONNECTIONS;r++)
-        SocketsCon_InitSockCon(&m_WebServers[r].Con);
+        SocketsCon_InitSockCon(&Server->Connections[r].Con);
+
+    SocketsCon_EnableAddressReuse(&Server->ListeningSocket,true);
+
+    if(!SocketsCon_Listen(&Server->ListeningSocket,NULL,Port)) {
+        WS_Shutdown(Server);
+        return false;
+    }
+
+    return Server;
 }
 
 /*******************************************************************************
@@ -102,10 +110,10 @@ void WS_Init(void)
  *    WS_Shutdown
  *
  * SYNOPSIS:
- *    void WS_Shutdown(void);
+ *    void WS_Shutdown(struct WebServer *Server);
  *
  * PARAMETERS:
- *    NONE
+ *    Server [I] -- The web server to work on
  *
  * FUNCTION:
  *    This function releases anything the web server is using.  After you
@@ -118,42 +126,13 @@ void WS_Init(void)
  * SEE ALSO:
  *    WS_Init()
  ******************************************************************************/
-void WS_Shutdown(void)
+void WS_Shutdown(struct WebServer *Server)
 {
     int r;
 
-    SocketsCon_Close(&m_ListeningSocket);
+    SocketsCon_Close(&Server->ListeningSocket);
     for(r=0;r<WS_OPT_MAX_CONNECTIONS;r++)
-        SocketsCon_Close(&m_WebServers[r].Con);
-}
-
-/*******************************************************************************
- * NAME:
- *    WS_Start
- *
- * SYNOPSIS:
- *    bool WS_Start(uint16_t Port);
- *
- * PARAMETERS:
- *    Port [I] -- What port to listen on
- *
- * FUNCTION:
- *    This function starts the web server listening for incoming connections.
- *
- * RETURNS:
- *    true -- Things worked out
- *    false -- There was an error
- *
- * SEE ALSO:
- *    WS_WriteWhole(), WS_WriteChunk(), WS_Header(),
- ******************************************************************************/
-bool WS_Start(uint16_t Port)
-{
-    SocketsCon_EnableAddressReuse(&m_ListeningSocket,true);
-
-    if(!SocketsCon_Listen(&m_ListeningSocket,NULL,Port))
-        return false;
-    return true;
+        SocketsCon_Close(&Server->Connections[r].Con);
 }
 
 /*******************************************************************************
@@ -161,7 +140,7 @@ bool WS_Start(uint16_t Port)
  *    WS_ResetWebServer
  *
  * SYNOPSIS:
- *    static void WS_ResetWebServer(struct WebServer *Web);
+ *    static void WS_ResetWebServer(struct WebServerContext *Web);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -175,7 +154,7 @@ bool WS_Start(uint16_t Port)
  * SEE ALSO:
  *    
  ******************************************************************************/
-static void WS_ResetWebServer(struct WebServer *Web)
+static void WS_ResetWebServer(struct WebServerContext *Web)
 {
     Web->LineBuffPos=0;
     Web->State=e_WebServerState_Request;
@@ -200,10 +179,10 @@ static void WS_ResetWebServer(struct WebServer *Web)
  *    WS_Tick
  *
  * SYNOPSIS:
- *    void WS_Tick(void);
+ *    void WS_Tick(struct WebServer *Server);
  *
  * PARAMETERS:
- *    NONE
+ *    Server [I] -- The web server to work on
  *
  * FUNCTION:
  *    This function runs the web server.  It accepts new connections, reads
@@ -219,32 +198,33 @@ static void WS_ResetWebServer(struct WebServer *Web)
  * SEE ALSO:
  *    
  ******************************************************************************/
-void WS_Tick(void)
+void WS_Tick(struct WebServer *Server)
 {
     int con;
     int Bytes;
     char ReadBuff[100];
+    struct WebServerContext *Web;
 
-    SocketsCon_Tick(&m_ListeningSocket);
+    SocketsCon_Tick(&Server->ListeningSocket);
 
     /* Do all the connections */
     for(con=0;con<WS_OPT_MAX_CONNECTIONS;con++)
     {
-        SocketsCon_Tick(&m_WebServers[con].Con);
+        Web = &Server->Connections[con];
+        SocketsCon_Tick(&Web->Con);
 
-        if(!SocketsCon_IsConnected(&m_WebServers[con].Con))
+        if(!SocketsCon_IsConnected(&Web->Con))
         {
             /* Poll for any new connections (we keep asking giving each free
                connection a chance to get the new connection) */
-            if(SocketsCon_Accept(&m_ListeningSocket,&m_WebServers[con].Con))
+            if(SocketsCon_Accept(&Server->ListeningSocket,&Web->Con))
             {
                 /* Ok, we got a new connection */
-                WS_ResetWebServer(&m_WebServers[con]);
+                WS_ResetWebServer(Web);
             }
             else
             {
-                if(SocketsCon_GetErrorCode(&m_ListeningSocket)!=
-                        e_ConnectError_AllOk)
+                if(SocketsCon_GetErrorCode(&Server->ListeningSocket)!=e_ConnectError_AllOk)
                 {
                     /* We had an error accepting the connection, the listening
                        socket it now closed */
@@ -254,17 +234,15 @@ void WS_Tick(void)
         else
         {
             /* Handle requests from connected connections */
-            Bytes=SocketsCon_Read(&m_WebServers[con].Con,ReadBuff,
-                    sizeof(ReadBuff));
+            Bytes=SocketsCon_Read(&Web->Con,ReadBuff,sizeof(ReadBuff));
             if(Bytes==0)
             {
 
-                if(ReadElapsedClock()-m_WebServers[con].LastReadTime>=
-                        WS_SECONDS_UNTIL_CONNECTION_RELEASE)
+                if(ReadElapsedClock()-Web->LastReadTime>=WS_SECONDS_UNTIL_CONNECTION_RELEASE)
                 {
                     /* Ok, connection timed out, hang up so others can use it */
-                    SocketsCon_Close(&m_WebServers[con].Con);
-                    m_WebServers[con].State=e_WebServerState_Closed;
+                    SocketsCon_Close(&Web->Con);
+                    Web->State=e_WebServerState_Closed;
                 }
 
                 continue;
@@ -272,14 +250,14 @@ void WS_Tick(void)
             if(Bytes<0)
             {
                 /* Error, hang up */
-                SocketsCon_Close(&m_WebServers[con].Con);
-                m_WebServers[con].State=e_WebServerState_Closed;
+                SocketsCon_Close(&Web->Con);
+                Web->State=e_WebServerState_Closed;
                 continue;
             }
 
-            WS_RunServer(&m_WebServers[con],ReadBuff,Bytes);
+            WS_RunServer(Web,ReadBuff,Bytes);
 
-            m_WebServers[con].LastReadTime=ReadElapsedClock();
+            Web->LastReadTime=ReadElapsedClock();
         }
     }
 }
@@ -289,7 +267,7 @@ void WS_Tick(void)
  *    WS_RunServer
  *
  * SYNOPSIS:
- *    static void WS_RunServer(struct WebServer *Web,char *ReadBuff,int Bytes);
+ *    static void WS_RunServer(struct WebServerContext *Web,char *ReadBuff,int Bytes);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -306,7 +284,7 @@ void WS_Tick(void)
  * SEE ALSO:
  *    
  ******************************************************************************/
-static void WS_RunServer(struct WebServer *Web,char *ReadBuff,int Bytes)
+static void WS_RunServer(struct WebServerContext *Web,char *ReadBuff,int Bytes)
 {
     int BytesUsed;
     char *ReadPoint;
@@ -542,7 +520,7 @@ static void WS_RunServer(struct WebServer *Web,char *ReadBuff,int Bytes)
  *    WS_GetNextLine
  *
  * SYNOPSIS:
- *    static int WS_GetNextLine(struct WebServer *Web,char *ReadBuff,int Bytes);
+ *    static int WS_GetNextLine(struct WebServerContext *Web,char *ReadBuff,int Bytes);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -561,7 +539,7 @@ static void WS_RunServer(struct WebServer *Web,char *ReadBuff,int Bytes)
  * SEE ALSO:
  *    
  ******************************************************************************/
-static int WS_GetNextLine(struct WebServer *Web,char *ReadBuff,int Bytes)
+static int WS_GetNextLine(struct WebServerContext *Web,char *ReadBuff,int Bytes)
 {
     int r;
 
@@ -596,7 +574,7 @@ static int WS_GetNextLine(struct WebServer *Web,char *ReadBuff,int Bytes)
  *    WS_ProcessURI
  *
  * SYNOPSIS:
- *    static bool WS_ProcessURI(struct WebServer *Web);
+ *    static bool WS_ProcessURI(struct WebServerContext *Web);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -612,7 +590,7 @@ static int WS_GetNextLine(struct WebServer *Web,char *ReadBuff,int Bytes)
  * SEE ALSO:
  *    
  ******************************************************************************/
-static bool WS_ProcessURI(struct WebServer *Web)
+static bool WS_ProcessURI(struct WebServerContext *Web)
 {
     int EndOfLine;
     char *ArgsStart;
@@ -666,7 +644,7 @@ static bool WS_ProcessURI(struct WebServer *Web)
  *    WS_ProcessHeader
  *
  * SYNOPSIS:
- *    static void WS_ProcessHeader(struct WebServer *Web);
+ *    static void WS_ProcessHeader(struct WebServerContext *Web);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -685,7 +663,7 @@ static bool WS_ProcessURI(struct WebServer *Web)
  * SEE ALSO:
  *    
  ******************************************************************************/
-static void WS_ProcessHeader(struct WebServer *Web)
+static void WS_ProcessHeader(struct WebServerContext *Web)
 {
     char *ETag;
     char *End;
@@ -760,7 +738,7 @@ static void WS_ProcessHeader(struct WebServer *Web)
  *    WS_ProcessETag
  *
  * SYNOPSIS:
- *    static void WS_ProcessETag(struct WebServer *Web,bool Weak,
+ *    static void WS_ProcessETag(struct WebServerContext *Web,bool Weak,
  *          const char *ETag);
  *
  * PARAMETERS:
@@ -780,7 +758,7 @@ static void WS_ProcessHeader(struct WebServer *Web)
  * SEE ALSO:
  *    
  ******************************************************************************/
-static void WS_ProcessETag(struct WebServer *Web,bool Weak,const char *ETag)
+static void WS_ProcessETag(struct WebServerContext *Web,bool Weak,const char *ETag)
 {
     if(!Web->PageProp.DynamicFile && strcmp(ETag,DOCVER)==0)
     {
@@ -794,7 +772,7 @@ static void WS_ProcessETag(struct WebServer *Web,bool Weak,const char *ETag)
  *    WS_StartReply
  *
  * SYNOPSIS:
- *    static void WS_StartReply(struct WebServer *Web);
+ *    static void WS_StartReply(struct WebServerContext *Web);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -809,7 +787,7 @@ static void WS_ProcessETag(struct WebServer *Web,bool Weak,const char *ETag)
  * SEE ALSO:
  *    
  ******************************************************************************/
-static void WS_StartReply(struct WebServer *Web)
+static void WS_StartReply(struct WebServerContext *Web)
 {
     const char *Msg;
     char buff[100];
@@ -896,7 +874,7 @@ static void WS_StartReply(struct WebServer *Web)
  *    WS_EndReply
  *
  * SYNOPSIS:
- *    static void WS_EndReply(struct WebServer *Web);
+ *    static void WS_EndReply(struct WebServerContext *Web);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -911,7 +889,7 @@ static void WS_StartReply(struct WebServer *Web)
  * SEE ALSO:
  *    
  ******************************************************************************/
-static void WS_EndReply(struct WebServer *Web)
+static void WS_EndReply(struct WebServerContext *Web)
 {
     if(Web->WriteChunked)
     {
@@ -925,7 +903,7 @@ static void WS_EndReply(struct WebServer *Web)
  *    WS_SendResponse
  *
  * SYNOPSIS:
- *    static void WS_SendResponse(struct WebServer *Web);
+ *    static void WS_SendResponse(struct WebServerContext *Web);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -943,7 +921,7 @@ static void WS_EndReply(struct WebServer *Web)
  * SEE ALSO:
  *    
  ******************************************************************************/
-static void WS_SendResponse(struct WebServer *Web)
+static void WS_SendResponse(struct WebServerContext *Web)
 {
 /* DEBUG PAUL: Let the code handle e_ReplyStatus_InsufficientStorage and
    override it if it wants */
@@ -965,7 +943,7 @@ static void WS_SendResponse(struct WebServer *Web)
  *    WS_WriteWhole
  *
  * SYNOPSIS:
- *    void WS_WriteWhole(struct WebServer *Web,const char *Buffer,int Len);
+ *    void WS_WriteWhole(struct WebServerContext *Web,const char *Buffer,int Len);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -986,7 +964,7 @@ static void WS_SendResponse(struct WebServer *Web)
  * SEE ALSO:
  *    WS_Start(), WS_WriteWholeStr(), WS_WriteChunk()
  ******************************************************************************/
-void WS_WriteWhole(struct WebServer *Web,const char *Type,const char *Buffer,int Len)
+void WS_WriteWhole(struct WebServerContext *Web,const char *Type,const char *Buffer,int Len)
 {
     char buff[100];
 
@@ -1016,7 +994,7 @@ void WS_WriteWhole(struct WebServer *Web,const char *Type,const char *Buffer,int
  *    WS_WriteChunk
  *
  * SYNOPSIS:
- *    void WS_WriteChunk(struct WebServer *Web,const char *Buffer,int Len);
+ *    void WS_WriteChunk(struct WebServerContext *Web,const char *Buffer,int Len);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -1038,7 +1016,7 @@ void WS_WriteWhole(struct WebServer *Web,const char *Type,const char *Buffer,int
  * SEE ALSO:
  *    WS_WriteChunkStr(), WS_WriteWhole()
  ******************************************************************************/
-void WS_WriteChunk(struct WebServer *Web,const char *Buffer,int Len)
+void WS_WriteChunk(struct WebServerContext *Web,const char *Buffer,int Len)
 {
     char buff[100];
 
@@ -1066,7 +1044,7 @@ void WS_WriteChunk(struct WebServer *Web,const char *Buffer,int Len)
  *    WS_WriteWholeStr
  *
  * SYNOPSIS:
- *    void WS_WriteWholeStr(struct WebServer *Web,const char *Buffer);
+ *    void WS_WriteWholeStr(struct WebServerContext *Web,const char *Buffer);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -1087,7 +1065,7 @@ void WS_WriteChunk(struct WebServer *Web,const char *Buffer,int Len)
  * SEE ALSO:
  *    WS_Start(), WS_WriteWhole()
  ******************************************************************************/
-void WS_WriteWholeStr(struct WebServer *Web,const char *Type,const char *Buffer)
+void WS_WriteWholeStr(struct WebServerContext *Web,const char *Type,const char *Buffer)
 {
     WS_WriteWhole(Web,Type,Buffer,strlen(Buffer));
 }
@@ -1097,7 +1075,7 @@ void WS_WriteWholeStr(struct WebServer *Web,const char *Type,const char *Buffer)
  *    WS_WriteChunkStr
  *
  * SYNOPSIS:
- *    void WS_WriteChunkStr(struct WebServer *Web,const char *Buffer);
+ *    void WS_WriteChunkStr(struct WebServerContext *Web,const char *Buffer);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -1119,7 +1097,7 @@ void WS_WriteWholeStr(struct WebServer *Web,const char *Type,const char *Buffer)
  * SEE ALSO:
  *    WS_Start(), WS_WriteChunk()
  ******************************************************************************/
-void WS_WriteChunkStr(struct WebServer *Web,const char *Buffer)
+void WS_WriteChunkStr(struct WebServerContext *Web,const char *Buffer)
 {
     WS_WriteChunk(Web,Buffer,strlen(Buffer));
 }
@@ -1309,7 +1287,7 @@ bool WS_URLEncode(const char *Value,char *OutputBuffer,int MaxLen)
  *    WS_Header
  *
  * SYNOPSIS:
- *    bool WS_Header(struct WebServer *Web,const char *Header);
+ *    bool WS_Header(struct WebServerContext *Web,const char *Header);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -1332,7 +1310,7 @@ bool WS_URLEncode(const char *Value,char *OutputBuffer,int MaxLen)
  * SEE ALSO:
  *    WS_Start(), WS_WriteChunk()
  ******************************************************************************/
-bool WS_Header(struct WebServer *Web,const char *Header)
+bool WS_Header(struct WebServerContext *Web,const char *Header)
 {
     if(Header[0]==0)
         return false;
@@ -1354,7 +1332,7 @@ bool WS_Header(struct WebServer *Web,const char *Header)
  *    WS_Location
  *
  * SYNOPSIS:
- *    bool WS_Location(struct WebServer *Web,const char *NewURL);
+ *    bool WS_Location(struct WebServerContext *Web,const char *NewURL);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -1373,7 +1351,7 @@ bool WS_Header(struct WebServer *Web,const char *Header)
  * SEE ALSO:
  *    
  ******************************************************************************/
-bool WS_Location(struct WebServer *Web,const char *NewURL)
+bool WS_Location(struct WebServerContext *Web,const char *NewURL)
 {
     if(NewURL[0]==0)
         return false;
@@ -1393,7 +1371,7 @@ bool WS_Location(struct WebServer *Web,const char *NewURL)
  *    WS_SetHTTPStatusCode
  *
  * SYNOPSIS:
- *    bool WS_SetHTTPStatusCode(struct WebServer *Web,e_ReplyStatusType Code);
+ *    bool WS_SetHTTPStatusCode(struct WebServerContext *Web,e_ReplyStatusType Code);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -1412,7 +1390,7 @@ bool WS_Location(struct WebServer *Web,const char *NewURL)
  * SEE ALSO:
  *    WS_Location(), WS_Header()
  ******************************************************************************/
-bool WS_SetHTTPStatusCode(struct WebServer *Web,e_ReplyStatusType Code)
+bool WS_SetHTTPStatusCode(struct WebServerContext *Web,e_ReplyStatusType Code)
 {
     if(Code>=e_ReplyStatusMAX)
         return false;
@@ -1435,7 +1413,7 @@ bool WS_SetHTTPStatusCode(struct WebServer *Web,e_ReplyStatusType Code)
  *    WS_GET
  *
  * SYNOPSIS:
- *    const char *WS_GET(struct WebServer *Web,const char *Arg);
+ *    const char *WS_GET(struct WebServerContext *Web,const char *Arg);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -1454,7 +1432,7 @@ bool WS_SetHTTPStatusCode(struct WebServer *Web,e_ReplyStatusType Code)
  * SEE ALSO:
  *    WS_Start(), WS_COOKIE(), WS_POST()
  ******************************************************************************/
-const char *WS_GET(struct WebServer *Web,const char *Arg)
+const char *WS_GET(struct WebServerContext *Web,const char *Arg)
 {
     /* GETS are first so no need to skip anything */
     return WS_FindArgInStorage(Web->ArgsStorage,Arg,Web->PageProp.Gets);
@@ -1465,7 +1443,7 @@ const char *WS_GET(struct WebServer *Web,const char *Arg)
  *    WS_COOKIE
  *
  * SYNOPSIS:
- *    const char *WS_COOKIE(struct WebServer *Web,const char *Arg);
+ *    const char *WS_COOKIE(struct WebServerContext *Web,const char *Arg);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -1484,7 +1462,7 @@ const char *WS_GET(struct WebServer *Web,const char *Arg)
  * SEE ALSO:
  *    WS_Start(), WS_GET(), WS_POST()
  ******************************************************************************/
-const char *WS_COOKIE(struct WebServer *Web,const char *Arg)
+const char *WS_COOKIE(struct WebServerContext *Web,const char *Arg)
 {
     char *Pos;
 
@@ -1500,7 +1478,7 @@ const char *WS_COOKIE(struct WebServer *Web,const char *Arg)
  *    WS_POST
  *
  * SYNOPSIS:
- *    const char *WS_POST(struct WebServer *Web,const char *Arg);
+ *    const char *WS_POST(struct WebServerContext *Web,const char *Arg);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -1519,7 +1497,7 @@ const char *WS_COOKIE(struct WebServer *Web,const char *Arg)
  * SEE ALSO:
  *    WS_Start(), WS_GET(), WS_COOKIE()
  ******************************************************************************/
-const char *WS_POST(struct WebServer *Web,const char *Arg)
+const char *WS_POST(struct WebServerContext *Web,const char *Arg)
 {
     char *Pos;
 
@@ -1710,7 +1688,7 @@ static void WS_InsertCopy(char *Dest,char *DestEnd,const char *Src,int CopyLen)
  *    WS_SetCookie
  *
  * SYNOPSIS:
- *    bool WS_SetCookie(struct WebServer *Web,const char *Name,
+ *    bool WS_SetCookie(struct WebServerContext *Web,const char *Name,
  *          const char *Value,time_t Expire,const char *Path,const char *Domain,
  *          bool Secure,bool HttpOnly);
  *
@@ -1768,7 +1746,7 @@ static void WS_InsertCopy(char *Dest,char *DestEnd,const char *Src,int CopyLen)
  * SEE ALSO:
  *    
  ******************************************************************************/
-bool WS_SetCookie(struct WebServer *Web,const char *Name,const char *Value,
+bool WS_SetCookie(struct WebServerContext *Web,const char *Name,const char *Value,
         time_t Expire,const char *Path,const char *Domain,bool Secure,
         bool HttpOnly)
 {
@@ -1845,6 +1823,7 @@ bool WS_SetCookie(struct WebServer *Web,const char *Name,const char *Value,
  *    int WS_GetOSSocketHandles(t_ConSocketHandle *Handles);
  *
  * PARAMETERS:
+ *    Server [I] -- The web server to work on
  *    Handles [O] -- An array to fill in with the handles being used by the
  *                   web server.  This must be at least
  *                   'WS_OPT_MAX_CONNECTIONS+1' in size.
@@ -1861,7 +1840,7 @@ bool WS_SetCookie(struct WebServer *Web,const char *Name,const char *Value,
  * SEE ALSO:
  *    
  ******************************************************************************/
-int WS_GetOSSocketHandles(t_ConSocketHandle *Handles)
+int WS_GetOSSocketHandles(struct WebServer *Server,t_ConSocketHandle *Handles)
 {
     t_ConSocketHandle SocketHandle;
     int r;
@@ -1869,9 +1848,9 @@ int WS_GetOSSocketHandles(t_ConSocketHandle *Handles)
 
     /* Fill in the first entry with the listening socket */
     InsertPos=0;
-    SocketsCon_GetSocketHandle(&m_ListeningSocket,&Handles[InsertPos++]);
+    SocketsCon_GetSocketHandle(&Server->ListeningSocket,&Handles[InsertPos++]);
     for(r=0;r<WS_OPT_MAX_CONNECTIONS;r++)
-        if(SocketsCon_GetSocketHandle(&m_WebServers[r].Con,&SocketHandle))
+        if(SocketsCon_GetSocketHandle(&Server->Connections[r].Con,&SocketHandle))
             Handles[InsertPos++]=SocketHandle;
 
     return InsertPos;
@@ -1882,7 +1861,7 @@ int WS_GetOSSocketHandles(t_ConSocketHandle *Handles)
  *    WS_ProcessGetVars
  *
  * SYNOPSIS:
- *    static void WS_ProcessGetVars(struct WebServer *Web);
+ *    static void WS_ProcessGetVars(struct WebServerContext *Web);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -1929,7 +1908,7 @@ int WS_GetOSSocketHandles(t_ConSocketHandle *Handles)
  * SEE ALSO:
  *    
  ******************************************************************************/
-static void WS_ProcessGetVars(struct WebServer *Web)
+static void WS_ProcessGetVars(struct WebServerContext *Web)
 {
     char *ArgsStart;
     char *Start;
@@ -2075,7 +2054,7 @@ static void WS_ProcessGetVars(struct WebServer *Web)
  *    WS_ProcessCookieVars
  *
  * SYNOPSIS:
- *    static void WS_ProcessCookieVars(struct WebServer *Web);
+ *    static void WS_ProcessCookieVars(struct WebServerContext *Web);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -2093,7 +2072,7 @@ static void WS_ProcessGetVars(struct WebServer *Web)
  * SEE ALSO:
  *    
  ******************************************************************************/
-static void WS_ProcessCookieVars(struct WebServer *Web)
+static void WS_ProcessCookieVars(struct WebServerContext *Web)
 {
     int g;
     char *ArgsStart;
@@ -2242,7 +2221,7 @@ static void WS_ProcessCookieVars(struct WebServer *Web)
  *    WS_StartProcessingPOSTVar
  *
  * SYNOPSIS:
- *    static void WS_StartProcessingPOSTVar(struct WebServer *Web);
+ *    static void WS_StartProcessingPOSTVar(struct WebServerContext *Web);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -2259,7 +2238,7 @@ static void WS_ProcessCookieVars(struct WebServer *Web)
  * SEE ALSO:
  *    
  ******************************************************************************/
-static void WS_StartProcessingPOSTVar(struct WebServer *Web)
+static void WS_StartProcessingPOSTVar(struct WebServerContext *Web)
 {
     char *Write;
     char *StorageStart;
@@ -2319,7 +2298,7 @@ static void WS_StartProcessingPOSTVar(struct WebServer *Web)
  *    WS_CopyLineBuffer2POSTVar
  *
  * SYNOPSIS:
- *    static bool WS_CopyLineBuffer2POSTVar(struct WebServer *Web);
+ *    static bool WS_CopyLineBuffer2POSTVar(struct WebServerContext *Web);
  *
  * PARAMETERS:
  *    Web [I] -- The web server context to work on
@@ -2337,7 +2316,7 @@ static void WS_StartProcessingPOSTVar(struct WebServer *Web)
  * SEE ALSO:
  *    WS_StartProcessingPOSTVar()
  ******************************************************************************/
-static bool WS_CopyLineBuffer2POSTVar(struct WebServer *Web)
+static bool WS_CopyLineBuffer2POSTVar(struct WebServerContext *Web)
 {
     char EscBuff[3];
     char *Pos;
@@ -2427,7 +2406,7 @@ static bool WS_CopyLineBuffer2POSTVar(struct WebServer *Web)
     return true;
 }
 
-//static void DEBUG_PrintStoredArgs(struct WebServer *Web)
+//static void DEBUG_PrintStoredArgs(struct WebServerContext *Web)
 //{
 //    char *StorageStart;
 //    int r;
