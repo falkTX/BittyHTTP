@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(libfios LANGUAGES C)
+project(BittyHTTP LANGUAGES C)
 
 set(CMAKE_POLICY_DEFAULT_CMP0025 NEW)
 set(CMAKE_POLICY_DEFAULT_CMP0063 NEW)
@@ -12,8 +12,6 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN TRUE)
 
 set_property(GLOBAL PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 
-find_package(Threads REQUIRED)
-
 # building interface library
 add_library(bittyhttp-interface INTERFACE)
 add_library(bittyhttp::interface ALIAS bittyhttp-interface)
@@ -25,7 +23,6 @@ target_include_directories(bittyhttp-interface
 
 target_link_libraries(bittyhttp-interface
   INTERFACE
-    ${CMAKE_THREAD_LIBS_INIT}
     $<$<BOOL:${WIN32}>:winmm>
     $<$<BOOL:${WIN32}>:ws2_32>
 )

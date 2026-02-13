@@ -986,7 +986,7 @@ static void WS_SendResponse(struct WebServer *Web)
  * SEE ALSO:
  *    WS_Start(), WS_WriteWholeStr(), WS_WriteChunk()
  ******************************************************************************/
-void WS_WriteWhole(struct WebServer *Web,const char* Type,const char *Buffer,int Len)
+void WS_WriteWhole(struct WebServer *Web,const char *Type,const char *Buffer,int Len)
 {
     char buff[100];
 
