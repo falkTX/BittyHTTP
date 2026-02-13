@@ -851,7 +851,7 @@ static void WS_StartReply(struct WebServerContext *Web)
 
     if(Web->ReplyStatus!=e_ReplyStatus_Ok && !Web->UserSetReplyStatus)
     {
-        sprintf(buff,"Content-Length: %zd\r\n",strlen(Msg));
+        snprintf(buff,sizeof(buff)-1,"Content-Length: %zd\r\n",strlen(Msg));
         SocketsCon_Write(&Web->Con,buff,strlen(buff));
         SocketsCon_Write(&Web->Con,"\r\n",2);
         SocketsCon_Write(&Web->Con,Msg,strlen(Msg));
@@ -861,7 +861,7 @@ static void WS_StartReply(struct WebServerContext *Web)
         if(!Web->PageProp.DynamicFile)
         {
             /* It's dynamic, so we need to add the ETag */
-            sprintf(buff,"ETag: \"%s\"\r\n",DOCVER);
+            snprintf(buff,sizeof(buff)-1,"ETag: \"%s\"\r\n",DOCVER);
             SocketsCon_Write(&Web->Con,buff,strlen(buff));
         }
     }
@@ -980,10 +980,10 @@ void WS_WriteWhole(struct WebServerContext *Web,const char *Type,const char *Buf
     if(!Web->ReplyStarted)
         WS_StartReply(Web);
 
-    sprintf(buff,"Content-Type: %s\r\n",Type);
+    snprintf(buff,sizeof(buff)-1,"Content-Type: %s\r\n",Type);
     SocketsCon_Write(&Web->Con,buff,strlen(buff));
 
-    sprintf(buff,"Content-Length: %d\r\n",Len);
+    snprintf(buff,sizeof(buff)-1,"Content-Length: %d\r\n",Len);
     SocketsCon_Write(&Web->Con,buff,strlen(buff));
     SocketsCon_Write(&Web->Con,"\r\n",2);
     SocketsCon_Write(&Web->Con,Buffer,Len);
@@ -1033,7 +1033,7 @@ void WS_WriteChunk(struct WebServerContext *Web,const char *Buffer,int Len)
     Web->WriteChunked=true;
     Web->WriteStarted=true;
 
-    sprintf(buff,"%X\r\n",Len);
+    snprintf(buff,sizeof(buff)-1,"%X\r\n",Len);
     SocketsCon_Write(&Web->Con,buff,strlen(buff));
     SocketsCon_Write(&Web->Con,Buffer,Len);
     SocketsCon_Write(&Web->Con,"\r\n",2);   // End of chunk
@@ -1781,14 +1781,14 @@ bool WS_SetCookie(struct WebServerContext *Web,const char *Name,const char *Valu
     if(Expire!=0)
     {
         TheTm=gmtime(&Expire);
-        sprintf(buff,"; Expires=%s, %02d %s %04d %02d:%02d:%02d GMT",
-                wday_name[TheTm->tm_wday],
-                TheTm->tm_mday,
-                mon_name[TheTm->tm_mon],
-                TheTm->tm_year+1900,
-                TheTm->tm_hour,
-                TheTm->tm_min,
-                TheTm->tm_sec);
+        snprintf(buff,sizeof(buff)-1,"; Expires=%s, %02d %s %04d %02d:%02d:%02d GMT",
+                 wday_name[TheTm->tm_wday],
+                 TheTm->tm_mday,
+                 mon_name[TheTm->tm_mon],
+                 TheTm->tm_year+1900,
+                 TheTm->tm_hour,
+                 TheTm->tm_min,
+                 TheTm->tm_sec);
         SocketsCon_Write(&Web->Con,buff,strlen(buff));
     }
     if(Path!=NULL && Path[0]!=0)
