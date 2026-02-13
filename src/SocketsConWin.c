@@ -39,7 +39,7 @@
 #include <stdio.h>
 #include <signal.h>
 #include <winsock2.h>
-#include <Windows.h>
+#include <windows.h>
 #include <ws2tcpip.h>
 
 /*** DEFINES                  ***/
