@@ -46,7 +46,9 @@
 #include <stdint.h>
 #include <fcntl.h>
 #include <stdio.h>
+#ifndef __APPLE__
 #include <sys/sysinfo.h>
+#endif
 #include <sys/time.h>
 #include <signal.h>
 
