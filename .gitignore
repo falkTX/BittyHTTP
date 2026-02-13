@@ -1,5 +1,8 @@
 **.d
 **.o
+CMakeFiles
+Makefile
 build
+cmake_install.cmake
 website.exe
 
