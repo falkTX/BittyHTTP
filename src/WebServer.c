@@ -951,7 +951,7 @@ static void WS_SendResponse(struct WebServer *Web)
     {
         /* Ok, process file */
         Web->ReplyStatus=e_ReplyStatus_Ok;
-        FS_SendFile(Web,Web->PageProp.FileID);
+        FS_SendFile(Web,Web->PageProp.FileData);
     }
     else
     {

@@ -88,7 +88,7 @@ struct WSPageProp
     const char **Cookies;
     const char **Gets;
     const char **Posts;
-    uintptr_t FileID;
+    const void *FileData;
 };
 
 typedef enum
@@ -151,7 +151,7 @@ int WS_GetOSSocketHandles(t_ConSocketHandle *Handles);
 
 /* Web server calls these */
 bool FS_GetFileProperties(const char *Filename,struct WSPageProp *PageProp);
-void FS_SendFile(struct WebServer *Web,uintptr_t FileID);
+void FS_SendFile(struct WebServer *Web,const void *FileData);
 t_ElapsedTime ReadElapsedClock(void);
 
 #endif
