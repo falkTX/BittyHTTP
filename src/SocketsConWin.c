@@ -594,7 +594,7 @@ bool SocketsCon_Listen(struct SocketCon *Con,const char *bindadd,int PortNo)
     memset((char *)&serv_addr,0x00,sizeof(serv_addr));
     serv_addr.sin_family=AF_INET;
     if(bindadd==NULL)
-        serv_addr.sin_addr.s_addr=INADDR_ANY;
+        serv_addr.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
     else
         serv_addr.sin_addr.s_addr=inet_addr(bindadd);
     serv_addr.sin_port=htons(PortNo);
