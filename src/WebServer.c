@@ -986,7 +986,7 @@ static void WS_SendResponse(struct WebServer *Web)
  * SEE ALSO:
  *    WS_Start(), WS_WriteWholeStr(), WS_WriteChunk()
  ******************************************************************************/
-void WS_WriteWhole(struct WebServer *Web,const char *Buffer,int Len)
+void WS_WriteWhole(struct WebServer *Web,const char* Type,const char *Buffer,int Len)
 {
     char buff[100];
 
@@ -1001,6 +1001,9 @@ void WS_WriteWhole(struct WebServer *Web,const char *Buffer,int Len)
 
     if(!Web->ReplyStarted)
         WS_StartReply(Web);
+
+    sprintf(buff,"Content-Type: %s\r\n",Type);
+    SocketsCon_Write(&Web->Con,buff,strlen(buff));
 
     sprintf(buff,"Content-Length: %d\r\n",Len);
     SocketsCon_Write(&Web->Con,buff,strlen(buff));
@@ -1084,9 +1087,9 @@ void WS_WriteChunk(struct WebServer *Web,const char *Buffer,int Len)
  * SEE ALSO:
  *    WS_Start(), WS_WriteWhole()
  ******************************************************************************/
-void WS_WriteWholeStr(struct WebServer *Web,const char *Buffer)
+void WS_WriteWholeStr(struct WebServer *Web,const char *Type,const char *Buffer)
 {
-    WS_WriteWhole(Web,Buffer,strlen(Buffer));
+    WS_WriteWhole(Web,Type,Buffer,strlen(Buffer));
 }
 
 /*******************************************************************************
