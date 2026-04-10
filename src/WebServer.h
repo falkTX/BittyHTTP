@@ -136,9 +136,9 @@ struct WebServer
 struct WebServer *WS_Init(uint16_t Port);
 void WS_Shutdown(struct WebServer *Server);
 void WS_Tick(struct WebServer *Server);
-void WS_WriteWhole(struct WebServerContext *Web,const char *Type,const char *Buffer,int Len);
+void WS_WriteWhole(struct WebServerContext *Web,const char *Type,const unsigned char *Buffer,int Len);
 void WS_WriteWholeStr(struct WebServerContext *Web,const char *Type,const char *Buffer);
-void WS_WriteChunk(struct WebServerContext *Web,const char *Buffer,int Len);
+void WS_WriteChunk(struct WebServerContext *Web,const unsigned char *Buffer,int Len);
 void WS_WriteChunkStr(struct WebServerContext *Web,const char *Buffer);
 bool WS_Header(struct WebServerContext *Web,const char *Header);
 bool WS_Location(struct WebServerContext *Web,const char *NewURL);
