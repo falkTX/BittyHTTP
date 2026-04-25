@@ -858,7 +858,11 @@ static void WS_StartReply(struct WebServerContext *Web)
     }
     else
     {
-        if(!Web->PageProp.DynamicFile)
+        if(Web->PageProp.NoCache)
+        {
+            SocketsCon_Write(&Web->Con,"Cache-Control: no-cache\r\n",25);
+        }
+        else if(!Web->PageProp.DynamicFile)
         {
             /* It's dynamic, so we need to add the ETag */
             snprintf(buff,sizeof(buff)-1,"ETag: \"%s\"\r\n",DOCVER);

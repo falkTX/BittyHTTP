@@ -85,6 +85,7 @@ typedef enum
 struct WSPageProp
 {
     bool DynamicFile;
+    bool NoCache;
     const char **Cookies;
     const char **Gets;
     const char **Posts;
