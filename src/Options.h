@@ -36,7 +36,9 @@
 /***  HEADER FILES TO INCLUDE          ***/
 
 /***  DEFINES                          ***/
+#ifndef DOCVER
 #define DOCVER                              "1.0.0.0"
+#endif
 
 #define WS_OPT_MAX_CONNECTIONS              16      // The max number of connections we can handle at the same time (this will include buffers needed for each connection)
 #define WS_OPT_ARG_MEMORY_SIZE              100     // The memory block to use to store the cookies, get args, and post args
